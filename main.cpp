@@ -78,39 +78,89 @@ struct contour_sorter // 'less' for contours
     }
 };
 
+bool yOverlap(const Rect& r1, const Rect& r2)
+{
+    return (r1.y >= r2.y && r1.y <= r2.y + r2.height) || (r2.y >= r1.y && r2.y <= r1.y + r1.height);
+}
+
 void ScreenShotBB(const Mat& src, const Mat& processed_image, const MinecraftFont& mf)
 {
     vector<vector<Point> > contours;
     vector<Vec4i> hierarchy;
-    findContours(processed_image, contours, hierarchy, CV_RETR_TREE, CV_CHAIN_APPROX_SIMPLE, Point(0, 0));
+    findContours(processed_image, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE, Point(0, 0));
     sort(contours.begin(), contours.end(), contour_sorter());
     vector<vector<Point> > contours_poly( contours.size() );
     vector<Rect> boundRect( contours.size() );
+    vector<Rect> firstCharsInLine( contours.size() );
     // TODO: copy src to drawing
     Mat drawing = src;
     /*Mat drawing;
     cvtColor(processed_image, drawing, CV_GRAY2RGB);*/
     for( int i = 0; i < contours.size(); i++ ) {
-        Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
         approxPolyDP( Mat(contours[i]), contours_poly[i], 3, true );
         boundRect[i] = boundingRect( Mat(contours_poly[i]) );
          //drawContours( drawing, contours_poly, i, color, 1, 8, vector<Vec4i>(), 0, Point() );
-        rectangle( drawing, boundRect[i].tl(), boundRect[i].br(), color, 1, 1, 0 );
+    }
+
+    vector<Rect> X;
+    vector<Rect> Y;
+    vector<Rect> Z;
+
+    vector<Rect> rectsToDraw;
+
+    for (int i = 0; i < boundRect.size(); i++) {
         Mat c(processed_image, boundRect[i]);
-        printChar(c);
+        //printChar(c);
 
         char rc = recognizeChar(mf, c);
-
-        //cout << "~~~~~~~~~~" << endl;
-        if (rc > 31) {
-            //cout << "OCR char: " << rc << " " << int(rc) << endl;
-            cout << rc;
-        } else {
-            cout << "Char not recognized!" << endl;
+        if (rc == 'X' || rc == 'Y' || rc == 'Z') {
+            cout << rc << endl;
+            rectsToDraw.push_back(boundRect[i]);
         }
-        // cout << "~~~~~~~~~~" << endl;
-        cout << endl;
+        switch (rc) {
+            case 'X':
+                X.push_back(boundRect[i]);
+                break;
+            case 'Y':
+                Y.push_back(boundRect[i]);
+                break;
+            case 'Z':
+                Z.push_back(boundRect[i]);
+                break;
+            default:
+                break;
+        }
     }
+    Rect XYZ_line;
+    for (int x = 0; x < X.size(); x++)
+        for (int y = 0; y < Y.size(); y++)
+            for (int z = 0; z < Z.size(); z++)
+                if (yOverlap(X[x], Y[y]) && yOverlap(X[x], Z[z]) && yOverlap(Y[y], Z[z])) {
+                    cout << "FOUND!" << endl;
+                    XYZ_line = Rect(0, X[x].tl().y, src.cols, X[x].height);
+                    rectsToDraw.push_back(XYZ_line);
+                }
+    vector<Rect> chars_in_XYZ_line;
+    for (int i = 0; i < boundRect.size(); i++) {
+        if (yOverlap(boundRect[i], XYZ_line)) {
+            chars_in_XYZ_line.push_back(boundRect[i]);
+            rectsToDraw.push_back(boundRect[i]);
+        }
+    }
+    cout << "-----" << endl;
+    sort(chars_in_XYZ_line.begin(), chars_in_XYZ_line.end(), [](const Rect& r1, const Rect& r2){return r1.x < r2.x;});
+    for (int i = 0; i < chars_in_XYZ_line.size(); i++) {
+        Mat c(processed_image, chars_in_XYZ_line[i]);
+        char rc = recognizeChar(mf, c);
+        cout << rc;
+    }
+    cout << "-----" << endl;
+    rectsToDraw = chars_in_XYZ_line;
+    for (int i = 0; i < rectsToDraw.size(); i++) {
+        Scalar color = Scalar( rng.uniform(0, 255), rng.uniform(0,255), rng.uniform(0,255) );
+        rectangle( drawing, rectsToDraw[i].tl(), rectsToDraw[i].br(), color, 1, 1, 0 );
+    }
+    cout << "Showing the window" << endl;
     namedWindow("Contours", CV_WINDOW_AUTOSIZE);
     imshow("Contours", drawing);
     waitKey(0);
